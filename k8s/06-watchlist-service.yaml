@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: watchlist-service
+  namespace: streamflix
+spec:
+  type: ClusterIP
+  selector:
+    app: watchlist
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http

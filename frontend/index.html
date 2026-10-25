@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StreamFlix</title>
+<style>
+body{margin:0;background:#090b14;color:#fff;font-family:Arial,sans-serif}
+header{padding:20px 5%;background:#15182a;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{font-size:26px;font-weight:bold;color:#ff6eaa}
+main{padding:28px 5%;max-width:1200px;margin:auto}
+.hero{padding:35px;border-radius:18px;background:linear-gradient(120deg,#292454,#873c80)}
+h1{font-size:42px;margin:10px 0}
+input,select{padding:12px;border-radius:8px;border:1px solid #444;background:#191d30;color:white;margin:5px}
+button{padding:10px 13px;border:0;border-radius:8px;background:#9b72ff;color:white;cursor:pointer;margin:4px}
+button:hover{filter:brightness(1.2)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:18px}
+.card{background:#171b2b;border-radius:14px;overflow:hidden;border:1px solid #30354b}
+.poster{height:130px;display:grid;place-items:center;font-size:55px;background:linear-gradient(130deg,#37306c,#bd4f8d)}
+.card section{padding:14px}
+.muted{color:#b8bfd2;font-size:14px}
+.pill{display:inline-block;background:#252a41;padding:8px 12px;border-radius:20px;margin:5px}
+#message{position:fixed;bottom:15px;right:15px;background:#292e44;padding:12px;border-radius:8px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">STREAMFLIX</div>
+  <nav>
+    <button onclick="go('catalog')">Explore</button>
+    <button onclick="go('watchlist')">My List (<span id="count">0</span>)</button>
+    <button onclick="go('reviews')">Reviews</button>
+  </nav>
+</header>
+<main>
+  <div class="hero">
+    <p>YOUR NEXT FAVOURITE STARTS HERE</p>
+    <h1>Stories worth staying up for.</h1>
+    <p>Discover movies, build your watchlist and share your ratings.</p>
+    <button onclick="go('catalog')">Explore titles ↓</button>
+  </div>
+
+  <section id="catalog">
+    <h2>Discover titles</h2>
+    <input id="search" placeholder="Search movies..." oninput="renderMovies()">
+    <select id="genre" onchange="renderMovies()">
+      <option value="">All genres</option>
+    </select>
+    <div id="movies" class="grid">Loading movies...</div>
+  </section>
+
+  <section id="watchlist">
+    <h2>My watchlist</h2>
+    <p class="muted">Items are stored in a SQLite database on a Kubernetes PVC.</p>
+    <div id="saved" class="grid">Loading watchlist...</div>
+  </section>
+
+  <section>
+    <h2>Picked for you</h2>
+    <div id="recommendations"></div>
+  </section>
+
+  <section id="reviews">
+    <h2>Community reviews</h2>
+    <div id="reviewsList" class="grid"></div>
+  </section>
+</main>
+<div id="message"></div>
+
+<script>
+let catalogue = [], watchlist = [];
+const emojis = {
+  "Sci-Fi":"🚀","Thriller":"📡","Drama":"🌙","Action":"⚡",
+  "Adventure":"🌊","Mystery":"🔮","Comedy":"✨"
+};
+
+async function api(path, options={}) {
+  const response = await fetch(path, {
+    ...options,
+    headers: {"Content-Type":"application/json", ...(options.headers||{})}
+  });
+  if (!response.ok) throw new Error("API error: " + response.status);
+  return response.json();
+}
+function go(id) {
+  document.getElementById(id).scrollIntoView({behavior:"smooth"});
+}
+function notify(text) {
+  const el = document.getElementById("message");
+  el.textContent = text;
+  setTimeout(()=>el.textContent="",2500);
+}
+function safe(text) {
+  return String(text ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+function movieCard(m, saved=false) {
+  return `<article class="card">
+    <div class="poster">${emojis[m.genre] || "🎬"}</div>
+    <section>
+      <div class="muted">${safe(m.genre||"Movie")} · ${safe(m.year||"")}</div>
+      <h3>${safe(m.title)}</h3>
+      <p>${safe(m.description||"Saved title")}</p>
+      ${saved
+        ? `<button onclick="removeMovie(${Number(m.id)})">Remove</button>`
+        : `<button onclick="addMovie(${Number(m.id)})">＋ My List</button>`}
+      <button onclick="rateMovie(${Number(m.id)})">Rate</button>
+    </section>
+  </article>`;
+}
+function renderMovies() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const genre = document.getElementById("genre").value;
+  const items = catalogue.filter(m =>
+    m.title.toLowerCase().includes(q) && (!genre || m.genre===genre)
+  );
+  document.getElementById("movies").innerHTML = items.length
+    ? items.map(m=>movieCard(m,watchlist.some(w=>w.id===m.id))).join("")
+    : "<p>No movies match your search.</p>";
+}
+async function loadWatchlist() {
+  watchlist = await api("/api/watchlist");
+  document.getElementById("count").textContent = watchlist.length;
+  document.getElementById("saved").innerHTML = watchlist.length
+    ? watchlist.map(m=>movieCard(m,true)).join("")
+    : "<p>Your watchlist is empty.</p>";
+  renderMovies();
+}
+async function addMovie(id) {
+  try {
+    const m = catalogue.find(x=>x.id===id);
+    await api("/api/watchlist",{method:"POST",body:JSON.stringify(m)});
+    await loadWatchlist();
+    notify("Added to your watchlist");
+  } catch(e) { notify(e.message); }
+}
+async function removeMovie(id) {
+  try {
+    await api("/api/watchlist/"+id,{method:"DELETE"});
+    await loadWatchlist();
+    notify("Removed from your watchlist");
+  } catch(e) { notify(e.message); }
+}
+async function rateMovie(id) {
+  const score = Number(prompt("Rate from 1 to 5 stars:","5"));
+  if (!Number.isInteger(score)||score<1||score>5) return notify("Enter a score from 1 to 5");
+  const comment = prompt("Write a review:","Great movie!") || "";
+  try {
+    await api("/api/ratings",{method:"POST",body:JSON.stringify({
+      movie_id:id,score,user:"Guest",comment
+    })});
+    await loadReviews();
+    notify("Thanks for your review!");
+  } catch(e) { notify(e.message); }
+}
+async function loadReviews() {
+  const data = await api("/api/ratings");
+  document.getElementById("reviewsList").innerHTML = data.map(r=>
+    `<article class="card"><section><b>${safe(r.user)} · ${"★".repeat(r.score)}</b>
+    <p>${safe(r.comment)}</p><div class="muted">Movie ID: ${r.movie_id}</div></section></article>`
+  ).join("") || "<p>No reviews yet.</p>";
+}
+async function init() {
+  try {
+    catalogue = await api("/api/catalog");
+    const genres = [...new Set(catalogue.map(m=>m.genre))].sort();
+    document.getElementById("genre").innerHTML =
+      '<option value="">All genres</option>' +
+      genres.map(g=>`<option value="${safe(g)}">${safe(g)}</option>`).join("");
+    await loadWatchlist();
+    await loadReviews();
+    const picks = await api("/api/recommendations");
+    document.getElementById("recommendations").innerHTML = picks.map(p=>
+      `<span class="pill">${safe(p.title)} — ${safe(p.reason)}</span>`
+    ).join("");
+  } catch(e) {
+    document.getElementById("movies").textContent =
+      "Unable to load the services. Check Kubernetes Pods, Services and logs.";
+    console.error(e);
+  }
+}
+init();
+</script>
+</body>
+</html>

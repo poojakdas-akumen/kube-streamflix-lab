@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: watchlist
+  namespace: streamflix
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: watchlist
+  template:
+    metadata:
+      labels:
+        app: watchlist
+        tier: backend
+    spec:
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: watchlist
+          image: streamflix-watchlist:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: streamflix-config
+          volumeMounts:
+            - name: watchlist-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: watchlist-data
+          persistentVolumeClaim:
+            claimName: watchlist-pvc

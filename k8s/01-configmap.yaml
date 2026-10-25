@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streamflix-config
+  namespace: streamflix
+data:
+  APP_ENV: "teaching"
+  DB_PATH: "/data/watchlist.db"
